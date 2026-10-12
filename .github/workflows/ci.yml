@@ -1,0 +1,65 @@
+name: CI
+
+# A Kiln plugin is compiled inside a Kiln checkout (it can't be a Mix
+# dependency — kiln_cms#1909), so this checks out kiln_cms, vendors this repo
+# into its projects/ directory exactly as a deployment does, and runs this
+# repo's tests with Kiln's own toolchain and test setup.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      kiln_ref:
+        description: kiln_cms ref to test against
+        required: false
+
+env:
+  # The kiln_cms ref this plugin is tested against. It needs `Kiln.ImageBackend`,
+  # which is still in review on kiln_cms#1958's branch; once that merges, move
+  # this to `main`, and to the release tag that ships it after that.
+  KILN_REF: ${{ inputs.kiln_ref || 'claude/cloudflare-images-adapter-kiln-ef93f5' }}
+  MIX_ENV: test
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out kiln_cms
+        uses: actions/checkout@v5
+        with:
+          repository: The-Verscienta/kiln_cms
+          ref: ${{ env.KILN_REF }}
+
+      - name: Vendor this plugin into projects/
+        uses: actions/checkout@v5
+        with:
+          path: projects/cloudflare_images
+
+      - name: Set up Mix (kiln_cms's own action)
+        uses: ./.github/actions/setup-mix
+        with:
+          compile: warnings-as-errors
+
+      - name: Check formatting
+        run: mix format --check-formatted "projects/cloudflare_images/**/*.{ex,exs}"
+
+      - name: Test
+        run: mix test projects/cloudflare_images/test
