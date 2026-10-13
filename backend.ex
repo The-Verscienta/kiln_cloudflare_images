@@ -102,11 +102,13 @@ defmodule KilnCloudflareImages.Backend do
   defp id_segments([_, _ | _] = segments), do: {:ok, Enum.drop(segments, -1)}
   defp id_segments([]), do: :error
 
-  # An imported URL can carry malformed escapes (`%zz`); that row isn't ours.
+  # An imported URL can carry malformed escapes (`%zz`, a trailing `%2`); that
+  # row isn't ours. Checked up front: depending on the Elixir version,
+  # `URI.decode/1` either raises on them or passes them through.
   defp decode(segments) do
-    {:ok, Enum.map(segments, &URI.decode/1)}
-  rescue
-    ArgumentError -> :error
+    if Enum.any?(segments, &(&1 =~ ~r/%(?![0-9A-Fa-f]{2})/)),
+      do: :error,
+      else: {:ok, Enum.map(segments, &URI.decode/1)}
   end
 
   defp strip_query(path), do: path |> String.split(["?", "#"], parts: 2) |> hd()
