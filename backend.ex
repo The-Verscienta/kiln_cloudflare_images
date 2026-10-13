@@ -66,19 +66,21 @@ defmodule KilnCloudflareImages.Backend do
 
   @doc """
   The custom ID a delivery URL names, for adopting imported rows. Accepts the
-  variant form (`…/<hash>/<id>/<variant or options>`) and the bare two-segment
-  form an import may have stored (`…/<hash>/<id>`, which Cloudflare itself
-  refuses to serve). Any other host or account hash is not ours.
+  variant form (`…/<hash>/<id>/<variant or options>`), where the ID may have
+  subpaths (`…/<hash>/blog/hero.jpg/public`), and the bare form an import may
+  have stored (`…/<hash>/<id>`, which Cloudflare itself refuses to serve) —
+  for a one-segment ID only, as a bare `…/<hash>/a/b` reads as ID `a`, variant
+  `b`. URLs under the configured delivery base and under `imagedelivery.net`
+  both count, so a library imported before a switch to a custom domain is
+  still recognised. Any other host or account hash is not ours.
   """
   @impl true
   def key_for_url(url) when is_binary(url) do
-    prefix = Config.delivery_base() <> "/"
-
     with true <- Config.complete?(),
-         true <- String.starts_with?(url, prefix),
-         rest = url |> String.replace_prefix(prefix, "") |> strip_query(),
-         {:ok, id} <- id_segment(String.split(rest, "/", trim: true)) do
-      {:ok, URI.decode(id)}
+         {:ok, rest} <- strip_base(url),
+         {:ok, segments} <- id_segments(String.split(strip_query(rest), "/", trim: true)),
+         {:ok, decoded} <- decode(segments) do
+      {:ok, Enum.join(decoded, "/")}
     else
       _ -> :error
     end
@@ -86,9 +88,26 @@ defmodule KilnCloudflareImages.Backend do
 
   def key_for_url(_url), do: :error
 
-  defp id_segment([id]), do: {:ok, id}
-  defp id_segment([id, _variant]), do: {:ok, id}
-  defp id_segment(_segments), do: :error
+  defp strip_base(url) do
+    Enum.find_value(delivery_bases(), :error, fn base ->
+      prefix = base <> "/"
+      String.starts_with?(url, prefix) && {:ok, String.replace_prefix(url, prefix, "")}
+    end)
+  end
+
+  defp delivery_bases,
+    do: Enum.uniq([Config.delivery_base(), "https://imagedelivery.net/#{Config.account_hash()}"])
+
+  defp id_segments([id]), do: {:ok, [id]}
+  defp id_segments([_, _ | _] = segments), do: {:ok, Enum.drop(segments, -1)}
+  defp id_segments([]), do: :error
+
+  # An imported URL can carry malformed escapes (`%zz`); that row isn't ours.
+  defp decode(segments) do
+    {:ok, Enum.map(segments, &URI.decode/1)}
+  rescue
+    ArgumentError -> :error
+  end
 
   defp strip_query(path), do: path |> String.split(["?", "#"], parts: 2) |> hd()
 
@@ -130,9 +149,11 @@ defmodule KilnCloudflareImages.Backend do
   defp format(:avif), do: "f=avif"
   defp format(_png_or_gif), do: nil
 
-  # Cloudflare requires `%` in a custom ID to be sent as `%25`; Kiln's keys are
-  # plain, an adopted ID may not be.
-  defp segment(key), do: URI.encode(key, &(&1 != ?% and URI.char_unescaped?(&1)))
+  # Kiln's keys are plain; an adopted ID may not be. Its subpaths stay as
+  # Cloudflare delivers them, and everything else that isn't unreserved is
+  # escaped — `%` as `%25`, as Cloudflare requires, and `?`, `#` or a space,
+  # which would otherwise end or break the path.
+  defp segment(key), do: URI.encode(key, &(&1 == ?/ or URI.char_unreserved?(&1)))
 
   defp origin(scheme, host, port) when {scheme, port} in [{"https", 443}, {"http", 80}],
     do: "#{scheme}://#{host}"

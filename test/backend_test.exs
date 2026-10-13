@@ -72,6 +72,13 @@ defmodule KilnCloudflareImages.BackendTest do
       assert Backend.url("abc.png") ==
                "https://example.com/cdn-cgi/imagedelivery/HASH/abc.png/full"
     end
+
+    test "an adopted ID keeps its subpaths and escapes what would break the path" do
+      assert Backend.url("blog/hero.jpg") == "https://imagedelivery.net/HASH/blog/hero.jpg/public"
+
+      assert Backend.url("a b?c#d%e") ==
+               "https://imagedelivery.net/HASH/a%20b%3Fc%23d%25e/public"
+    end
   end
 
   describe "render_url/2" do
@@ -121,11 +128,40 @@ defmodule KilnCloudflareImages.BackendTest do
                {:ok, "abc-123"}
     end
 
+    test "an ID with subpaths is everything before the variant" do
+      assert Backend.key_for_url("https://imagedelivery.net/HASH/blog/2024/hero.jpg/public") ==
+               {:ok, "blog/2024/hero.jpg"}
+    end
+
+    test "round-trips the URLs it builds" do
+      for key <- ["abc.png", "blog/hero.jpg", "a b?c#d%e"] do
+        assert Backend.key_for_url(Backend.url(key)) == {:ok, key}
+        assert {:ok, url} = Backend.render_url(key, spec([]))
+        assert Backend.key_for_url(url) == {:ok, key}
+      end
+    end
+
+    test "still recognises imagedelivery.net URLs after a switch to a custom domain" do
+      settings(delivery_base: "https://example.com/cdn-cgi/imagedelivery/HASH")
+
+      assert Backend.key_for_url("https://imagedelivery.net/HASH/abc-123/public") ==
+               {:ok, "abc-123"}
+
+      custom = "https://example.com/cdn-cgi/imagedelivery/HASH/abc-123/public"
+      assert Backend.key_for_url(custom) == {:ok, "abc-123"}
+
+      assert Backend.key_for_url("https://imagedelivery.net/OTHER/abc-123/public") == :error
+    end
+
+    test "a malformed escape is not ours, rather than an error" do
+      assert Backend.key_for_url("https://imagedelivery.net/HASH/abc%zz/public") == :error
+      assert Backend.key_for_url("https://imagedelivery.net/HASH/abc%2") == :error
+    end
+
     test "another account's, another host's, or a malformed URL is not ours" do
       assert Backend.key_for_url("https://imagedelivery.net/OTHER/abc-123/public") == :error
       assert Backend.key_for_url("https://cdn.example.com/HASH/abc-123/public") == :error
       assert Backend.key_for_url("https://imagedelivery.net/HASH/") == :error
-      assert Backend.key_for_url("https://imagedelivery.net/HASH/a/b/c") == :error
       assert Backend.key_for_url(nil) == :error
     end
 
