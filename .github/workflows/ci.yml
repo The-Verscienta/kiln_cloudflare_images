@@ -16,10 +16,10 @@ on:
         required: false
 
 env:
-  # The kiln_cms ref this plugin is tested against. It needs `Kiln.ImageBackend`,
-  # which is still in review on kiln_cms#1958's branch; once that merges, move
-  # this to `main`, and to the release tag that ships it after that.
-  KILN_REF: ${{ inputs.kiln_ref || 'claude/cloudflare-images-adapter-kiln-ef93f5' }}
+  # The kiln_cms ref this plugin is tested against. It needs `Kiln.ImageBackend`
+  # (kiln_cms#1958), merged to `main` after 1.3.0; move this to the release tag
+  # that ships it once there is one.
+  KILN_REF: ${{ inputs.kiln_ref || 'main' }}
   MIX_ENV: test
 
 jobs:

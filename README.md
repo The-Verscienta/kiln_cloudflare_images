@@ -92,7 +92,9 @@ mix kiln.media.adopt_image_backend             # --org <uuid> for another site
 
 This takes every media row that has no stored file and whose URL is one of
 this account's delivery URLs, including the bare `…/<hash>/<id>` form some
-importers stored. It records the image's ID on the row and enqueues its
+importers stored and IDs with subpaths (`…/<hash>/blog/hero.jpg/public`).
+`imagedelivery.net` URLs count even after you set a custom
+`CLOUDFLARE_IMAGES_DELIVERY_BASE`. It records the image's ID on the row and enqueues its
 variants. Rows pointing anywhere else are left alone.
 
 ## How Kiln's sizes map to Cloudflare
