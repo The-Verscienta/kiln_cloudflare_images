@@ -26,18 +26,8 @@ defmodule KilnCloudflareImages.BackendTest do
     )
   end
 
-  test "is a Kiln image backend with a stable name" do
-    assert Kiln.ImageBackend.Registry.backend?(Backend)
+  test "has a stable name" do
     assert Backend.name() == "cloudflare_images"
-  end
-
-  # What `mix kiln.plugins.doctor` checks once a deployment lists the plugin —
-  # the test env's plugin list is Kiln's own fixture, so it's asked directly.
-  test "passes the plugin doctor's image-backend checks, selected" do
-    assert Mix.Tasks.Kiln.Plugins.Doctor.image_backend_problems(
-             [KilnCloudflareImages.Plugin],
-             Backend
-           ) == []
   end
 
   describe "configured?/0" do

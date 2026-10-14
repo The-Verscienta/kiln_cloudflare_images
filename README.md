@@ -24,9 +24,11 @@ With it selected:
 
 ## Requirements
 
-- KilnCMS with `Kiln.ImageBackend`, which arrives in
-  [kiln_cms#1958](https://github.com/The-Verscienta/kiln_cms/pull/1958) (the
-  release after 1.3.0).
+- KilnCMS with `Kiln.ImageBackend`
+  ([kiln_cms#1958](https://github.com/The-Verscienta/kiln_cms/pull/1958)) and
+  the `config/project_deps.exs` hook
+  ([kiln_cms#1979](https://github.com/The-Verscienta/kiln_cms/pull/1979)):
+  the release after 1.3.0.
 - A Cloudflare account with Images, and an API token with **Cloudflare Images:
   Edit**.
 - **Flexible variants** switched on: Cloudflare dashboard → Images → Delivery.
@@ -36,20 +38,24 @@ With it selected:
 
 ## Install
 
-A Kiln plugin is compiled with Kiln, not added as a Mix dependency
-([kiln_cms#1909](https://github.com/The-Verscienta/kiln_cms/issues/1909)).
-Vendor this repository into your Kiln checkout's `projects/` directory, the
-same way an overlay is:
+The plugin is a Mix dependency built on
+[`kiln_plugin`](https://github.com/The-Verscienta/kiln_cms/blob/main/sdk/kiln_plugin/README.md),
+Kiln's plugin contract. A site installs it through its overlay's
+`config/project_deps.exs`
+([kiln_cms#1967](https://github.com/The-Verscienta/kiln_cms/issues/1967)),
+never by editing Kiln's own `mix.exs`:
 
-```bash
-git submodule add https://github.com/The-Verscienta/kiln_cloudflare_images projects/cloudflare_images
+```elixir
+# config/project_deps.exs
+[
+  {:kiln_cloudflare_images,
+   github: "The-Verscienta/kiln_cloudflare_images", tag: "v0.1.0"}
+]
 ```
 
-or copy it in your image build:
-
-```dockerfile
-COPY cloudflare_images projects/cloudflare_images
-```
+`mix deps.get` then locks it in `config/project.lock`, leaving Kiln's
+`mix.lock` alone. Commit both files in the overlay, next to
+`config/project.exs`.
 
 Then register the plugin and select its backend in `config/project.exs`:
 
@@ -58,7 +64,8 @@ config :kiln_cms, :plugins, [KilnCloudflareImages.Plugin]
 config :kiln_cms, :image_backend, KilnCloudflareImages.Backend
 ```
 
-`mix kiln.plugins.doctor` checks both lines.
+`mix kiln.plugins.doctor` checks both lines, and that this plugin's
+`kiln_plugin` requirement accepts the version Kiln bundles.
 
 ## Configure
 
@@ -120,15 +127,16 @@ Every URL also carries `metadata=none`.
 
 ## Development
 
-The tests run inside a Kiln checkout:
+The unit tests in `test/` need only this project:
 
 ```bash
-cd path/to/kiln_cms
-ln -s path/to/kiln_cloudflare_images projects/cloudflare_images
-mix test projects/cloudflare_images/test
+mix deps.get
+mix test
 ```
 
-CI does the same against the kiln_cms ref named at the top of `.github/workflows/ci.yml`.
+The tests that need Kiln itself are in `test_kiln/`, which says how to run
+them from a kiln_cms checkout. CI runs both, the second against the kiln_cms
+ref named at the top of `.github/workflows/ci.yml`.
 
 ## License
 
