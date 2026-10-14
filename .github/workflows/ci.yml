@@ -1,9 +1,15 @@
 name: CI
 
-# A Kiln plugin is compiled inside a Kiln checkout (it can't be a Mix
-# dependency — kiln_cms#1909), so this checks out kiln_cms, vendors this repo
-# into its projects/ directory exactly as a deployment does, and runs this
-# repo's tests with Kiln's own toolchain and test setup.
+# This plugin is a Mix project that depends only on `kiln_plugin` (the plugin
+# contract, kiln_cms#1909), so it is checked twice:
+#
+#   * standalone — compile, format and the unit tests in test/, against the
+#     SDK from Hex and nothing else. This is what a site's `mix deps.get`
+#     compiles.
+#   * in-kiln — inside a kiln_cms checkout, installed the way a site installs
+#     it: one line in the git-ignored `config/project_deps.exs`
+#     (kiln_cms#1967). Runs test_kiln/, the tests that need the core (upload
+#     ingest, variants, adoption, the backend registry and plugin doctor).
 
 on:
   push:
@@ -16,14 +22,40 @@ on:
         required: false
 
 env:
-  # The kiln_cms ref this plugin is tested against. It needs `Kiln.ImageBackend`
-  # (kiln_cms#1958), merged to `main` after 1.3.0; move this to the release tag
-  # that ships it once there is one.
+  # The kiln_cms ref the in-kiln job runs against. It needs the
+  # `config/project_deps.exs` hook (kiln_cms#1979, merged), so `main` until a
+  # release ships it; then pin the release tag that does.
   KILN_REF: ${{ inputs.kiln_ref || 'main' }}
   MIX_ENV: test
 
 jobs:
-  test:
+  standalone:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # The same Elixir/OTP pair as kiln_cms's .tool-versions.
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.20.4-otp-29"
+          otp-version: "29.1.1"
+          version-type: strict
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-standalone-${{ hashFiles('mix.exs', 'mix.lock') }}
+          restore-keys: ${{ runner.os }}-standalone-
+
+      - run: mix deps.get
+      - run: mix format --check-formatted
+      - run: mix compile --warnings-as-errors
+      - run: mix test
+
+  in-kiln:
     runs-on: ubuntu-24.04
 
     services:
@@ -48,18 +80,27 @@ jobs:
           repository: The-Verscienta/kiln_cms
           ref: ${{ env.KILN_REF }}
 
-      - name: Vendor this plugin into projects/
+      - name: Check out this plugin beside it
         uses: actions/checkout@v5
         with:
-          path: projects/cloudflare_images
+          path: plugins/kiln_cloudflare_images
+
+      # As a site does: the overlay's dependency list, never kiln_cms's mix.exs.
+      # Written before setup-mix so its `deps.get` and compile include the plugin.
+      - name: Install the plugin through config/project_deps.exs
+        run: |
+          echo '[{:kiln_cloudflare_images, path: "plugins/kiln_cloudflare_images"}]' > config/project_deps.exs
 
       - name: Set up Mix (kiln_cms's own action)
         uses: ./.github/actions/setup-mix
         with:
           compile: warnings-as-errors
 
-      - name: Check formatting
-        run: mix format --check-formatted "projects/cloudflare_images/**/*.{ex,exs}"
+      - name: Kiln's lock and tree are untouched
+        run: |
+          git diff --exit-code mix.lock
+          # plugins/ is this repo's own checkout; everything else must be clean.
+          test -z "$(git status --porcelain -- . ':!plugins')"
 
-      - name: Test
-        run: mix test projects/cloudflare_images/test
+      - name: Test inside Kiln
+        run: mix test plugins/kiln_cloudflare_images/test_kiln
