@@ -23,8 +23,9 @@ on:
 
 env:
   # The kiln_cms ref the in-kiln job runs against. It needs the
-  # `config/project_deps.exs` hook (kiln_cms#1979, merged), so `main` until a
-  # release ships it; then pin the release tag that does.
+  # `config/project_deps.exs` hook (kiln_cms#1979) and
+  # `Kiln.ImageBackend.check/0` (kiln_cms#1980), both merged, so `main` until a
+  # release ships them; then pin the release tag that does.
   KILN_REF: ${{ inputs.kiln_ref || 'main' }}
   MIX_ENV: test
 

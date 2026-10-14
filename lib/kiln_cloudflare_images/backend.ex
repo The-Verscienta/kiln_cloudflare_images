@@ -53,6 +53,52 @@ defmodule KilnCloudflareImages.Backend do
     end
   end
 
+  @doc """
+  Kiln's connection check (System → Image backend): asks for the account's
+  usage, which proves the account ID and token together, and reports it.
+  """
+  @impl true
+  def check do
+    if Config.complete?() do
+      case Client.stats() do
+        {:ok, %{current: current, allowed: allowed}} ->
+          {:ok,
+           [
+             {"Stored images", "#{delimit(current)} of #{delimit(allowed)}"},
+             {"Account", Config.account_id()}
+           ]}
+
+        {:error, {:http_status, status}} when status in [401, 403] ->
+          {:error,
+           "Cloudflare refused the API token (#{status}). Check CLOUDFLARE_IMAGES_TOKEN, " <>
+             "and that it has Images Read or Images Write on account #{Config.account_id()}."}
+
+        {:error, {:http_status, 404}} ->
+          {:error,
+           "Cloudflare doesn't know account #{Config.account_id()} (404). Check CLOUDFLARE_ACCOUNT_ID."}
+
+        {:error, {:http_status, status}} ->
+          {:error, "Cloudflare answered #{status}. The server log has its error detail."}
+
+        {:error, reason} ->
+          {:error, "Couldn't reach Cloudflare: #{inspect(reason)}"}
+      end
+    else
+      {:error,
+       "Settings missing: CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_IMAGES_TOKEN and " <>
+         "CLOUDFLARE_IMAGES_ACCOUNT_HASH are all needed."}
+    end
+  end
+
+  # 1204 → "1,204".
+  defp delimit(n) do
+    n
+    |> Integer.to_string()
+    |> String.reverse()
+    |> String.replace(~r/(\d{3})(?=\d)/, "\\1,")
+    |> String.reverse()
+  end
+
   @impl true
   def csp_hosts do
     case URI.parse(Config.delivery_base()) do

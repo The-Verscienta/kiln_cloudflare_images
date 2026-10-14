@@ -33,7 +33,8 @@ defmodule KilnCloudflareImages.MixProject do
   # Images API client; the core uses it too, so the two converge.
   defp deps do
     [
-      {:kiln_plugin, "~> 1.0"},
+      # 1.2: `Kiln.ImageBackend.check/0`.
+      {:kiln_plugin, "~> 1.2"},
       {:req, "~> 0.5"},
       # Req.Test's stubs are Plug conns.
       {:plug, "~> 1.16", only: :test}
