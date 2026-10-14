@@ -1,6 +1,6 @@
 defmodule KilnCloudflareImages.ClientTest do
   @moduledoc """
-  The three Images API calls, against a `Req.Test` stub standing in for
+  The Images API calls, against a `Req.Test` stub standing in for
   `api.cloudflare.com`.
   """
   use ExUnit.Case, async: false
@@ -114,5 +114,29 @@ defmodule KilnCloudflareImages.ClientTest do
     end)
 
     assert Client.delete("a/b%c") == :ok
+  end
+
+  test "stats reads the account's count and allowance" do
+    Req.Test.stub(Client, fn conn ->
+      assert {conn.method, conn.request_path} ==
+               {"GET", "/client/v4/accounts/acc123/images/v1/stats"}
+
+      Req.Test.json(conn, %{
+        "success" => true,
+        "result" => %{"count" => %{"current" => 1204, "allowed" => 100_000}}
+      })
+    end)
+
+    assert Client.stats() == {:ok, %{current: 1204, allowed: 100_000}}
+  end
+
+  test "stats passes on a refusal as its status" do
+    Req.Test.stub(Client, fn conn ->
+      conn
+      |> Plug.Conn.put_status(401)
+      |> Req.Test.json(%{"success" => false, "errors" => [%{"code" => 10_000}]})
+    end)
+
+    assert Client.stats() == {:error, {:http_status, 401}}
   end
 end

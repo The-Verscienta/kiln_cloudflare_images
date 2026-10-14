@@ -1,7 +1,8 @@
 defmodule KilnCloudflareImages.Client do
   @moduledoc """
-  The three Cloudflare Images API v1 calls the backend needs, over `Req`:
-  upload under a custom ID, download the original, delete.
+  The Cloudflare Images API v1 calls the backend needs, over `Req`: upload
+  under a custom ID, download the original, delete, and the account's usage
+  for Kiln's connection check.
 
   The host is fixed (`api.cloudflare.com`), never taken from data, so these
   calls don't go through `KilnCMS.SafeFetch`.
@@ -53,6 +54,27 @@ defmodule KilnCloudflareImages.Client do
     case request(:delete, "/#{segment(id)}", []) do
       {:ok, %{status: status}} when status in [200, 404] -> :ok
       other -> failure("delete #{id}", other)
+    end
+  end
+
+  @doc """
+  The account's stored-image count and allowance (`GET …/images/v1/stats`).
+  Needs only Images Read, so it is also the cheapest proof the token works.
+  """
+  @spec stats() ::
+          {:ok, %{current: non_neg_integer(), allowed: non_neg_integer()}} | {:error, term()}
+  def stats do
+    case request(:get, "/stats", retry: false) do
+      {:ok,
+       %{
+         status: 200,
+         body: %{"result" => %{"count" => %{"current" => current, "allowed" => allowed}}}
+       }}
+      when is_integer(current) and is_integer(allowed) ->
+        {:ok, %{current: current, allowed: allowed}}
+
+      other ->
+        failure("stats", other)
     end
   end
 

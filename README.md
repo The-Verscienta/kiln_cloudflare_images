@@ -28,7 +28,8 @@ With it selected:
   ([kiln_cms#1958](https://github.com/The-Verscienta/kiln_cms/pull/1958)) and
   the `config/project_deps.exs` hook
   ([kiln_cms#1979](https://github.com/The-Verscienta/kiln_cms/pull/1979)):
-  the release after 1.3.0.
+  the release after 1.3.0. The connection check needs `kiln_plugin` 1.1
+  ([kiln_cms#1980](https://github.com/The-Verscienta/kiln_cms/pull/1980)).
 - A Cloudflare account with Images, and an API token with **Cloudflare Images:
   Edit**.
 - **Flexible variants** switched on: Cloudflare dashboard → Images → Delivery.
@@ -83,8 +84,11 @@ already uses.
 | `CLOUDFLARE_IMAGES_FLEXIBLE_VARIANTS` | `:flexible_variants` | default `true` |
 
 Until the three required settings are present, the backend reports itself
-unconfigured and Kiln keeps storing images locally. **System → Plugins** says
-which state it's in.
+unconfigured and Kiln keeps storing images locally. **System → Image backend**
+says which state it's in, asks Cloudflare whether the account ID and token
+work (it reads the account's image count and allowance, which any Images
+token may), and counts the site's images that are here, that could be
+adopted, and that point elsewhere.
 
 The delivery origin is added to the browser CSP's `img-src` automatically while
 the backend is selected. If you later switch to another backend, keep this

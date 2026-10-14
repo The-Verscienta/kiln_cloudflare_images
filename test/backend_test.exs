@@ -26,6 +26,48 @@ defmodule KilnCloudflareImages.BackendTest do
     )
   end
 
+  describe "check/0" do
+    setup do
+      settings(req_options: [plug: {Req.Test, KilnCloudflareImages.Client}, retry: false])
+    end
+
+    test "reports the account's usage when the token works" do
+      Req.Test.stub(KilnCloudflareImages.Client, fn conn ->
+        Req.Test.json(conn, %{
+          "success" => true,
+          "result" => %{"count" => %{"current" => 1204, "allowed" => 100_000}}
+        })
+      end)
+
+      assert Backend.check() ==
+               {:ok, [{"Stored images", "1,204 of 100,000"}, {"Account", "acc123"}]}
+    end
+
+    test "names the setting to fix when Cloudflare refuses the token, never the token" do
+      settings(
+        api_token: "tok-secret-123",
+        req_options: [plug: {Req.Test, KilnCloudflareImages.Client}, retry: false]
+      )
+
+      Req.Test.stub(KilnCloudflareImages.Client, &Plug.Conn.send_resp(&1, 403, ""))
+
+      assert {:error, message} = Backend.check()
+      assert message =~ "CLOUDFLARE_IMAGES_TOKEN"
+      refute message =~ "tok-secret-123"
+    end
+
+    test "names the account setting when Cloudflare doesn't know the account" do
+      Req.Test.stub(KilnCloudflareImages.Client, &Plug.Conn.send_resp(&1, 404, ""))
+      assert {:error, message} = Backend.check()
+      assert message =~ "CLOUDFLARE_ACCOUNT_ID"
+    end
+
+    test "asks nothing of Cloudflare without its settings" do
+      Application.put_env(:kiln_cms, KilnCloudflareImages, account_id: "acc123")
+      assert {:error, "Settings missing: " <> _} = Backend.check()
+    end
+  end
+
   test "has a stable name" do
     assert Backend.name() == "cloudflare_images"
   end
