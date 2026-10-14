@@ -24,6 +24,11 @@ defmodule KilnCloudflareImages.BackendInKilnTest do
   # What `mix kiln.plugins.doctor` checks once a deployment lists the plugin —
   # the test env's plugin list is Kiln's own fixture, so it's asked directly.
   test "passes the plugin doctor's image-backend checks, selected" do
+    # `mix kiln.plugins.doctor` loads every plugin before this check; called
+    # directly on a fresh VM nothing has. Kiln before kiln_cms#1981 skipped an
+    # unloaded plugin and reported its backend as undeclared.
+    Code.ensure_loaded!(KilnCloudflareImages.Plugin)
+
     assert Mix.Tasks.Kiln.Plugins.Doctor.image_backend_problems(
              [KilnCloudflareImages.Plugin],
              Backend
