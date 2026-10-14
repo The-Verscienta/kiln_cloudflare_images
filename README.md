@@ -28,7 +28,7 @@ With it selected:
   ([kiln_cms#1958](https://github.com/The-Verscienta/kiln_cms/pull/1958)) and
   the `config/project_deps.exs` hook
   ([kiln_cms#1979](https://github.com/The-Verscienta/kiln_cms/pull/1979)):
-  the release after 1.3.0. The connection check needs `kiln_plugin` 1.1
+  the release after 1.3.0. The connection check needs `kiln_plugin` 1.2
   ([kiln_cms#1980](https://github.com/The-Verscienta/kiln_cms/pull/1980)).
 - A Cloudflare account with Images, and an API token with **Cloudflare Images:
   Edit**.
