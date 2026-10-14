@@ -23,11 +23,10 @@ on:
 
 env:
   # The kiln_cms ref the in-kiln job runs against. It needs the
-  # `config/project_deps.exs` hook (kiln_cms#1979, merged) and
-  # `Kiln.ImageBackend.check/0`, which is still in review on kiln_cms#1980's
-  # branch; once that merges, move this to `main`, and to the release tag that
-  # ships it after that.
-  KILN_REF: ${{ inputs.kiln_ref || 'claude/issue-1955-backend-status' }}
+  # `config/project_deps.exs` hook (kiln_cms#1979) and
+  # `Kiln.ImageBackend.check/0` (kiln_cms#1980), both merged, so `main` until a
+  # release ships them; then pin the release tag that does.
+  KILN_REF: ${{ inputs.kiln_ref || 'main' }}
   MIX_ENV: test
 
 jobs:
