@@ -82,6 +82,7 @@ already uses.
 | `CLOUDFLARE_IMAGES_VARIANT` | `:variant` | named variant for an item's plain URL; default `public` |
 | `CLOUDFLARE_IMAGES_DELIVERY_BASE` | `:delivery_base` | default `https://imagedelivery.net/<hash>`; set it to serve from your own domain (`https://example.com/cdn-cgi/imagedelivery/<hash>`) |
 | `CLOUDFLARE_IMAGES_FLEXIBLE_VARIANTS` | `:flexible_variants` | default `true` |
+| `CLOUDFLARE_IMAGES_FETCH_BUDGET` | `:fetch_budget` | originals fetched from the API per 5 minutes, per node; default `300`, `0` for none |
 
 Until the three required settings are present, the backend reports itself
 unconfigured and Kiln keeps storing images locally. **System → Image backend**
@@ -128,6 +129,15 @@ Every URL also carries `metadata=none`.
   images, so this doesn't come up.
 - Cloudflare bills per stored image and per delivery. With flexible variants
   on, each upload is one stored image however many sizes are served.
+- The Images API allows 1,200 calls per 5 minutes across the whole
+  Cloudflare account, and going over blocks every call, other apps' included,
+  for 5 minutes. Kiln calls it for each upload and delete, and fetches the
+  original for each `/media/:id/download`, rotation and variant job (one per
+  image after an adoption). Fetches are capped by
+  `CLOUDFLARE_IMAGES_FETCH_BUDGET`, spent a fifth per minute; past it a
+  download is a 404 and a variant job retries later. With several Kiln nodes
+  the budget applies to each, so divide it between them. Retries never wait
+  more than 5 seconds, whatever `Retry-After` Cloudflare sends.
 
 ## Development
 

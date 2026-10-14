@@ -10,10 +10,14 @@ defmodule KilnCloudflareImages.Client do
 
   require Logger
 
-  alias KilnCloudflareImages.Config
+  alias KilnCloudflareImages.{Config, FetchBudget}
 
   @api "https://api.cloudflare.com/client/v4"
   @timeout 30_000
+
+  # The longest this client sleeps before a retry, whatever Cloudflare's
+  # `Retry-After` says. Uploads run inside an editor's request.
+  @max_retry_delay 5_000
 
   @doc """
   Upload the file at `path` with the custom ID `id`.
@@ -38,13 +42,18 @@ defmodule KilnCloudflareImages.Client do
     end
   end
 
-  @doc "The original image's bytes."
+  @doc """
+  The original image's bytes, or `{:error, :rate_limited}` without calling
+  Cloudflare once this node's `KilnCloudflareImages.FetchBudget` is spent.
+  """
   @spec fetch(String.t()) :: {:ok, binary()} | {:error, term()}
   def fetch(id) do
-    case request(:get, "/#{segment(id)}/blob", decode_body: false) do
-      {:ok, %{status: 200, body: body}} when is_binary(body) -> {:ok, body}
-      {:ok, %{status: 404}} -> {:error, :not_found}
-      other -> failure("fetch #{id}", other)
+    with :ok <- FetchBudget.take() do
+      case request(:get, "/#{segment(id)}/blob", decode_body: false) do
+        {:ok, %{status: 200, body: body}} when is_binary(body) -> {:ok, body}
+        {:ok, %{status: 404}} -> {:error, :not_found}
+        other -> failure("fetch #{id}", other)
+      end
     end
   end
 
@@ -84,13 +93,56 @@ defmodule KilnCloudflareImages.Client do
       url: "#{@api}/accounts/#{Config.account_id()}/images/v1#{path}",
       auth: {:bearer, Config.api_token()},
       receive_timeout: @timeout,
-      retry: :transient,
+      retry: &retry/2,
       max_retries: 2
     ]
     |> Keyword.merge(opts)
     |> Keyword.merge(Config.req_options())
     |> Req.request()
   end
+
+  # Req's `:transient` (every method, as an upload or delete that landed is
+  # recognised on the retry), except that a 429 or 503 never sleeps longer
+  # than `@max_retry_delay`. Req would otherwise wait out any `Retry-After`;
+  # Cloudflare's account-wide rate limit answers with five minutes. A 429
+  # without a usable `Retry-After` isn't retried: it's that limit, and an
+  # early retry only spends a call.
+  defp retry(request, %Req.Response{status: status} = response) when status in [429, 503] do
+    case retry_after(response) do
+      delay when is_integer(delay) and delay <= @max_retry_delay -> {:delay, delay}
+      nil when status == 503 -> {:delay, backoff(request)}
+      _too_long_or_unknown -> false
+    end
+  end
+
+  defp retry(_request, %Req.Response{status: status}), do: status in [408, 500, 502, 504]
+
+  defp retry(_request, %Req.TransportError{reason: reason}),
+    do: reason in [:timeout, :econnrefused, :closed]
+
+  defp retry(_request, %Req.HTTPError{protocol: :http2, reason: reason}),
+    do: reason in [:unprocessed, :pool_not_available]
+
+  defp retry(_request, _exception), do: false
+
+  # Seconds only, which is what Cloudflare sends. Req's own parser raises on a
+  # malformed HTTP date and on a repeated header.
+  defp retry_after(response) do
+    with [value] <- Req.Response.get_header(response, "retry-after"),
+         {seconds, ""} when seconds >= 0 <- Integer.parse(String.trim(value)) do
+      seconds * 1000
+    else
+      _ -> nil
+    end
+  end
+
+  # 1s, 2s, … — Req's backoff, which `{:delay, _}` replaces.
+  defp backoff(request),
+    do:
+      min(
+        1000 * Integer.pow(2, Req.Request.get_private(request, :req_retry_count, 0)),
+        @max_retry_delay
+      )
 
   # Kiln's keys are flat (no `/`), but an adopted ID came from somewhere else.
   defp segment(id), do: URI.encode(id, &URI.char_unreserved?/1)
