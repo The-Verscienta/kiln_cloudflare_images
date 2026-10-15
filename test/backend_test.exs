@@ -31,16 +31,54 @@ defmodule KilnCloudflareImages.BackendTest do
       settings(req_options: [plug: {Req.Test, KilnCloudflareImages.Client}, retry: false])
     end
 
-    test "reports the account's usage when the token works" do
+    # Stats and the image list, answered separately.
+    defp stub_api(stats_status, list_status) do
       Req.Test.stub(KilnCloudflareImages.Client, fn conn ->
-        Req.Test.json(conn, %{
-          "success" => true,
-          "result" => %{"count" => %{"current" => 1204, "allowed" => 100_000}}
-        })
+        case conn.request_path do
+          "/client/v4/accounts/acc123/images/v1/stats" ->
+            conn
+            |> Plug.Conn.put_status(stats_status)
+            |> Req.Test.json(%{
+              "success" => stats_status == 200,
+              "result" => %{"count" => %{"current" => 1204, "allowed" => 100_000}}
+            })
+
+          "/client/v4/accounts/acc123/images/v1" ->
+            assert conn.query_string == "per_page=10"
+
+            conn
+            |> Plug.Conn.put_status(list_status)
+            |> Req.Test.json(%{"success" => list_status == 200, "result" => %{"images" => []}})
+        end
       end)
+    end
+
+    test "reports the account's usage when the token works" do
+      stub_api(200, 200)
 
       assert Backend.check() ==
                {:ok, [{"Stored images", "1,204 of 100,000"}, {"Account", "acc123"}]}
+    end
+
+    test "fails a token that reads the usage but not the images" do
+      # A permission policy scoped to domains: stats answer, images don't.
+      stub_api(200, 403)
+
+      assert {:error, message} = Backend.check()
+      assert message =~ "refused its images (403)"
+      assert message =~ "on the account itself"
+    end
+
+    test "passes on a rate limit as one" do
+      Req.Test.stub(KilnCloudflareImages.Client, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("retry-after", "30")
+        |> Plug.Conn.put_status(429)
+        |> Req.Test.json(%{"success" => false})
+      end)
+
+      assert {:error, message} = Backend.check()
+      assert message =~ "try again in 30 s"
     end
 
     test "names the setting to fix when Cloudflare refuses the token, never the token" do

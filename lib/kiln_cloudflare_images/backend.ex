@@ -55,33 +55,37 @@ defmodule KilnCloudflareImages.Backend do
 
   @doc """
   Kiln's connection check (System → Image backend): asks for the account's
-  usage, which proves the account ID and token together, and reports it.
+  usage, which proves the account ID and token together, then lists its
+  images, which proves the token's Images permissions reach the account.
+
+  The second call is the one that matters. A token whose permission policy is
+  scoped to specific domains reads the usage but is refused every image, so
+  uploads fail and every original's download is a 403. Write access can't be
+  proven without uploading, so the refusal names both permissions.
   """
   @impl true
   def check do
     if Config.complete?() do
-      case Client.stats() do
-        {:ok, %{current: current, allowed: allowed}} ->
-          {:ok,
-           [
-             {"Stored images", "#{delimit(current)} of #{delimit(allowed)}"},
-             {"Account", Config.account_id()}
-           ]}
-
-        {:error, {:http_status, status}} when status in [401, 403] ->
+      with {:ok, %{current: current, allowed: allowed}} <- Client.stats(),
+           {:images, :ok} <- {:images, Client.read_images()} do
+        {:ok,
+         [
+           {"Stored images", "#{delimit(current)} of #{delimit(allowed)}"},
+           {"Account", Config.account_id()}
+         ]}
+      else
+        {:images, {:error, {:http_status, status}}} when status in [401, 403] ->
           {:error,
-           "Cloudflare refused the API token (#{status}). Check CLOUDFLARE_IMAGES_TOKEN, " <>
-             "and that it has Images Read or Images Write on account #{Config.account_id()}."}
+           "The API token reads account #{Config.account_id()}'s usage but is refused its " <>
+             "images (#{status}). Give CLOUDFLARE_IMAGES_TOKEN Images Read and Images Write " <>
+             "on the account itself: a permission policy limited to specific domains doesn't " <>
+             "cover Images."}
 
-        {:error, {:http_status, 404}} ->
-          {:error,
-           "Cloudflare doesn't know account #{Config.account_id()} (404). Check CLOUDFLARE_ACCOUNT_ID."}
+        {:images, error} ->
+          check_error(error)
 
-        {:error, {:http_status, status}} ->
-          {:error, "Cloudflare answered #{status}. The server log has its error detail."}
-
-        {:error, reason} ->
-          {:error, "Couldn't reach Cloudflare: #{inspect(reason)}"}
+        error ->
+          check_error(error)
       end
     else
       {:error,
@@ -91,6 +95,29 @@ defmodule KilnCloudflareImages.Backend do
   end
 
   # 1204 → "1,204".
+  defp check_error({:error, {:http_status, status}}) when status in [401, 403],
+    do:
+      {:error,
+       "Cloudflare refused the API token (#{status}). Check CLOUDFLARE_IMAGES_TOKEN, " <>
+         "and that it has Images Read and Images Write on account #{Config.account_id()}."}
+
+  defp check_error({:error, {:http_status, 404}}),
+    do:
+      {:error,
+       "Cloudflare doesn't know account #{Config.account_id()} (404). Check CLOUDFLARE_ACCOUNT_ID."}
+
+  defp check_error({:error, {:rate_limited, retry_after_ms}}),
+    do:
+      {:error,
+       "Cloudflare is rate-limiting this account's API calls; " <>
+         "try again in #{div(retry_after_ms + 999, 1000)} s."}
+
+  defp check_error({:error, {:http_status, status}}),
+    do: {:error, "Cloudflare answered #{status}. The server log has its error detail."}
+
+  defp check_error({:error, reason}),
+    do: {:error, "Couldn't reach Cloudflare: #{inspect(reason)}"}
+
   defp delimit(n) do
     n
     |> Integer.to_string()
