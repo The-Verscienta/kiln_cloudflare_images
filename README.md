@@ -31,7 +31,10 @@ With it selected:
   the release after 1.3.0. The connection check needs `kiln_plugin` 1.2
   ([kiln_cms#1980](https://github.com/The-Verscienta/kiln_cms/pull/1980)).
 - A Cloudflare account with Images, and an API token with **Cloudflare Images:
-  Edit**.
+  Edit** (Images Read and Images Write) on **the account**. A permission
+  policy limited to specific domains doesn't cover Images: such a token reads
+  the account's usage but is refused every image, so uploads fail and no
+  original can be downloaded. The connection check catches this.
 - **Flexible variants** switched on: Cloudflare dashboard → Images → Delivery.
   Without them, set `CLOUDFLARE_IMAGES_FLEXIBLE_VARIANTS=false` and Kiln
   encodes each variant itself and uploads it as a separate image (more
@@ -87,8 +90,8 @@ already uses.
 Until the three required settings are present, the backend reports itself
 unconfigured and Kiln keeps storing images locally. **System → Image backend**
 says which state it's in, asks Cloudflare whether the account ID and token
-work (it reads the account's image count and allowance, which any Images
-token may), and counts the site's images that are here, that could be
+work (it reads the account's image count and allowance, then lists its
+images), and counts the site's images that are here, that could be
 adopted, and that point elsewhere.
 
 The delivery origin is added to the browser CSP's `img-src` automatically while

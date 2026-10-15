@@ -69,7 +69,9 @@ defmodule KilnCloudflareImages.Client do
 
   @doc """
   The account's stored-image count and allowance (`GET …/images/v1/stats`).
-  Needs only Images Read, so it is also the cheapest proof the token works.
+  Cheap, but not proof the token can reach the images: a token whose Images
+  permissions sit on specific domains instead of the account gets this and
+  is refused everything else (`read_images/0`).
   """
   @spec stats() ::
           {:ok, %{current: non_neg_integer(), allowed: non_neg_integer()}} | {:error, term()}
@@ -85,6 +87,19 @@ defmodule KilnCloudflareImages.Client do
 
       other ->
         failure("stats", other)
+    end
+  end
+
+  @doc """
+  Whether the token may read the account's images: lists one page
+  (`GET …/images/v1`), which needs Images Read on the account. The read
+  Kiln's downloads depend on, made without naming an image.
+  """
+  @spec read_images() :: :ok | {:error, term()}
+  def read_images do
+    case request(:get, "", params: [per_page: 10], retry: false) do
+      {:ok, %{status: 200, body: %{"success" => true}}} -> :ok
+      other -> failure("list images", other)
     end
   end
 
