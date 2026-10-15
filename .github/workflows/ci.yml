@@ -22,11 +22,12 @@ on:
         required: false
 
 env:
-  # The kiln_cms ref the in-kiln job runs against. It needs the
-  # `config/project_deps.exs` hook (kiln_cms#1979) and
-  # `Kiln.ImageBackend.check/0` (kiln_cms#1980), both merged, so `main` until a
-  # release ships them; then pin the release tag that does.
-  KILN_REF: ${{ inputs.kiln_ref || 'main' }}
+  # The kiln_cms release the in-kiln job runs against: the oldest the README
+  # supports. 1.4.0 is the first with the `config/project_deps.exs` hook
+  # (kiln_cms#1979) and `Kiln.ImageBackend.check/0` (kiln_cms#1980). Move it
+  # when the plugin starts needing a later release; `kiln_ref` on a manual run
+  # tests against any other ref, `main` included.
+  KILN_REF: ${{ inputs.kiln_ref || 'v1.4.0' }}
   MIX_ENV: test
 
 jobs:
