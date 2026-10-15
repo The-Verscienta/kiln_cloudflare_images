@@ -154,20 +154,26 @@ defmodule KilnCloudflareImages.ClientTest do
     end
 
     test "a long Retry-After isn't waited out" do
-      for status <- [429, 503] do
+      for {status, error} <- [{429, {:rate_limited, 300_000}}, {503, {:http_status, 503}}] do
         stub_sequence([{status, [{"retry-after", "300"}]}, {200, []}])
         {elapsed, result} = :timer.tc(fn -> quietly(fn -> Client.delete("k.png") end) end)
 
-        assert result == {:error, {:http_status, status}}
+        assert result == {:error, error}
         assert calls() == 1
         assert elapsed < 1_000_000
       end
     end
 
+    test "a 429 is a rate limit with Cloudflare's Retry-After, for a job to snooze on" do
+      stub_sequence([{429, [{"retry-after", "90"}]}])
+      assert quietly(fn -> Client.fetch("k.png") end) == {:error, {:rate_limited, 90_000}}
+    end
+
     test "a 429 without a usable Retry-After isn't retried" do
       for headers <- [[], [{"retry-after", "Wed, 21 Oct 2015 07:28:00"}]] do
         stub_sequence([{429, headers}, {200, []}])
-        assert quietly(fn -> Client.delete("k.png") end) == {:error, {:http_status, 429}}
+        # Without a usable Retry-After, the account-wide limit's five minutes.
+        assert quietly(fn -> Client.delete("k.png") end) == {:error, {:rate_limited, 300_000}}
         assert calls() == 1
       end
     end
@@ -185,7 +191,8 @@ defmodule KilnCloudflareImages.ClientTest do
       settings(fetch_budget: 0)
       Req.Test.stub(Client, fn _conn -> flunk("Cloudflare was called") end)
 
-      assert quietly(fn -> Client.fetch("k.png") end) == {:error, :rate_limited}
+      assert {:error, {:rate_limited, ms}} = quietly(fn -> Client.fetch("k.png") end)
+      assert ms in 1..60_000
     end
 
     test "is spent a fifth per minute" do
@@ -195,7 +202,8 @@ defmodule KilnCloudflareImages.ClientTest do
 
       assert FetchBudget.take(minute) == :ok
       assert FetchBudget.take(minute + 30) == :ok
-      assert quietly(fn -> FetchBudget.take(minute + 59) end) == {:error, :rate_limited}
+      # Refused until the next minute, one second away.
+      assert quietly(fn -> FetchBudget.take(minute + 59) end) == {:error, {:rate_limited, 1_000}}
       assert FetchBudget.take(minute + 60) == :ok
     end
 

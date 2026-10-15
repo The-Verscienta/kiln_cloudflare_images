@@ -43,8 +43,9 @@ defmodule KilnCloudflareImages.Client do
   end
 
   @doc """
-  The original image's bytes, or `{:error, :rate_limited}` without calling
-  Cloudflare once this node's `KilnCloudflareImages.FetchBudget` is spent.
+  The original image's bytes. `{:error, {:rate_limited, retry_after_ms}}`
+  when this node's `KilnCloudflareImages.FetchBudget` is spent (without
+  calling Cloudflare) or Cloudflare answers 429.
   """
   @spec fetch(String.t()) :: {:ok, binary()} | {:error, term()}
   def fetch(id) do
@@ -146,6 +147,14 @@ defmodule KilnCloudflareImages.Client do
 
   # Kiln's keys are flat (no `/`), but an adopted ID came from somewhere else.
   defp segment(id), do: URI.encode(id, &URI.char_unreserved?/1)
+
+  # Cloudflare's own rate limit, in the shape Kiln's budgets use, so a job can
+  # snooze until it lifts. Without a usable Retry-After, five minutes: the
+  # account-wide limit's block.
+  defp failure(what, {:ok, %{status: 429, body: body} = response}) do
+    Logger.warning("Cloudflare Images #{what} rate-limited (429): #{inspect(errors(body))}")
+    {:error, {:rate_limited, retry_after(response) || 300_000}}
+  end
 
   defp failure(what, {:ok, %{status: status, body: body}}) do
     Logger.warning("Cloudflare Images #{what} failed (#{status}): #{inspect(errors(body))}")

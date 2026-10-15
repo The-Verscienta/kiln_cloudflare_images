@@ -135,9 +135,15 @@ Every URL also carries `metadata=none`.
   original for each `/media/:id/download`, rotation and variant job (one per
   image after an adoption). Fetches are capped by
   `CLOUDFLARE_IMAGES_FETCH_BUDGET`, spent a fifth per minute; past it a
-  download is a 404 and a variant job retries later. With several Kiln nodes
-  the budget applies to each, so divide it between them. Retries never wait
-  more than 5 seconds, whatever `Retry-After` Cloudflare sends.
+  download is a 404 and a variant job waits for the next minute. With several
+  Kiln nodes the budget applies to each, so divide it between them. Retries
+  never wait more than 5 seconds, whatever `Retry-After` Cloudflare sends.
+- **Kiln 1.4.0 and earlier skip an image's sizes when its original can't be
+  read**, rather than retrying: an over-budget or rate-limited variant job
+  completes having done nothing. On those versions, keep a large adoption
+  within the budget, or run `KilnCMS.Media.Regeneration.run/1` afterwards to
+  re-enqueue the images left without sizes. Kiln after 1.4.0 snoozes the job
+  instead.
 
 ## Development
 

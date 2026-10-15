@@ -13,8 +13,9 @@ defmodule KilnCloudflareImages.FetchBudget do
   The budget (`KilnCloudflareImages.Config.fetch_budget/0`, per five minutes)
   is spent a fifth per minute, so it can't be used up in one burst; any five
   minutes overlap at most six minutes' shares, 1.2× the budget. Over budget, a
-  fetch fails with `{:error, :rate_limited}` without calling Cloudflare: a
-  download is a 404 and a variant job retries later. Uploads and deletes
+  fetch fails with `{:error, {:rate_limited, retry_after_ms}}` (the shape
+  Kiln's own budgets use) without calling Cloudflare: a download is a 404,
+  and a variant job snoozes until the next minute. Uploads and deletes
   aren't counted: each follows a write in Kiln, not a read anyone can repeat.
 
   Per node and approximate: concurrent callers at a window boundary can let a
@@ -29,12 +30,17 @@ defmodule KilnCloudflareImages.FetchBudget do
   @windows_per_budget 5
   @key {__MODULE__, :counter}
 
-  @doc "Spend one fetch, or `{:error, :rate_limited}` when this minute's share is gone."
-  @spec take(integer()) :: :ok | {:error, :rate_limited}
+  @doc """
+  Spend one fetch, or `{:error, {:rate_limited, retry_after_ms}}` when this
+  minute's share is gone, with the time left until the next minute.
+  """
+  @spec take(integer()) :: :ok | {:error, {:rate_limited, pos_integer()}}
   def take(now \\ System.system_time(:second)) do
     limit = per_window(Config.fetch_budget())
     counter = counter()
-    roll(counter, div(now, @window_seconds))
+    window = div(now, @window_seconds)
+    roll(counter, window)
+    limited = {:error, {:rate_limited, ((window + 1) * @window_seconds - now) * 1000}}
 
     case :atomics.add_get(counter, 2, 1) do
       count when count <= limit ->
@@ -46,10 +52,10 @@ defmodule KilnCloudflareImages.FetchBudget do
             "originals are refused until the next minute"
         )
 
-        {:error, :rate_limited}
+        limited
 
       _over ->
-        {:error, :rate_limited}
+        limited
     end
   end
 
