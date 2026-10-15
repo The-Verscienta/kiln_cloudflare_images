@@ -24,11 +24,11 @@ With it selected:
 
 ## Requirements
 
-- KilnCMS with `Kiln.ImageBackend`
-  ([kiln_cms#1958](https://github.com/The-Verscienta/kiln_cms/pull/1958)) and
-  the `config/project_deps.exs` hook
-  ([kiln_cms#1979](https://github.com/The-Verscienta/kiln_cms/pull/1979)):
-  the release after 1.3.0. The connection check needs `kiln_plugin` 1.2
+- KilnCMS 1.4.0 or later, which has `Kiln.ImageBackend`
+  ([kiln_cms#1958](https://github.com/The-Verscienta/kiln_cms/pull/1958)), the
+  `config/project_deps.exs` hook
+  ([kiln_cms#1979](https://github.com/The-Verscienta/kiln_cms/pull/1979)) and
+  `kiln_plugin` 1.2, which the connection check needs
   ([kiln_cms#1980](https://github.com/The-Verscienta/kiln_cms/pull/1980)).
 - A Cloudflare account with Images, and an API token with **Cloudflare Images:
   Edit** (Images Read and Images Write) on **the account**. A permission
