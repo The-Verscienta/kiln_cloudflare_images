@@ -11,6 +11,7 @@ defmodule KilnCloudflareImages.Config do
   | `:variant` | `CLOUDFLARE_IMAGES_VARIANT` | named variant for the plain URL, default `public` |
   | `:delivery_base` | `CLOUDFLARE_IMAGES_DELIVERY_BASE` | default `https://imagedelivery.net/<account_hash>` |
   | `:flexible_variants` | `CLOUDFLARE_IMAGES_FLEXIBLE_VARIANTS` | default `true`; `false` keeps Kiln's encoder |
+  | `:fetch_budget` | `CLOUDFLARE_IMAGES_FETCH_BUDGET` | originals fetched per 5 minutes, per node; default `300`, `0` turns fetches off |
 
   An empty environment variable counts as unset, so a blank line in an `.env`
   file reads as "not configured" rather than as an empty token.
@@ -52,6 +53,31 @@ defmodule KilnCloudflareImages.Config do
     case config()[:flexible_variants] do
       nil -> env("CLOUDFLARE_IMAGES_FLEXIBLE_VARIANTS") not in ["false", "0"]
       value -> value != false
+    end
+  end
+
+  @default_fetch_budget 300
+
+  @doc """
+  How many originals this node may fetch from the Images API per five minutes
+  (`KilnCloudflareImages.FetchBudget`). The default is a quarter of the
+  account's 1,200, leaving the rest for uploads, deletes and other apps on the
+  account. Anything that isn't a whole number ≥ 0 reads as the default.
+  """
+  @spec fetch_budget() :: non_neg_integer()
+  def fetch_budget do
+    case config()[:fetch_budget] || env("CLOUDFLARE_IMAGES_FETCH_BUDGET") do
+      budget when is_integer(budget) and budget >= 0 ->
+        budget
+
+      budget when is_binary(budget) ->
+        case Integer.parse(String.trim(budget)) do
+          {budget, ""} when budget >= 0 -> budget
+          _invalid -> @default_fetch_budget
+        end
+
+      _unset ->
+        @default_fetch_budget
     end
   end
 

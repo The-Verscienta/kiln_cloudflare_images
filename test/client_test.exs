@@ -5,7 +5,7 @@ defmodule KilnCloudflareImages.ClientTest do
   """
   use ExUnit.Case, async: false
 
-  alias KilnCloudflareImages.Client
+  alias KilnCloudflareImages.{Client, FetchBudget}
 
   setup do
     Application.put_env(:kiln_cms, KilnCloudflareImages,
@@ -138,5 +138,111 @@ defmodule KilnCloudflareImages.ClientTest do
     end)
 
     assert Client.stats() == {:error, {:http_status, 401}}
+  end
+
+  describe "retries" do
+    # The suite's stub turns retries off; these need them on.
+    setup do
+      settings(req_options: [plug: {Req.Test, Client}])
+    end
+
+    test "a 429 with a short Retry-After is retried after it" do
+      stub_sequence([{429, [{"retry-after", "0"}]}, {200, []}])
+
+      ExUnit.CaptureLog.capture_log(fn -> assert Client.delete("k.png") == :ok end)
+      assert calls() == 2
+    end
+
+    test "a long Retry-After isn't waited out" do
+      for {status, error} <- [{429, {:rate_limited, 300_000}}, {503, {:http_status, 503}}] do
+        stub_sequence([{status, [{"retry-after", "300"}]}, {200, []}])
+        {elapsed, result} = :timer.tc(fn -> quietly(fn -> Client.delete("k.png") end) end)
+
+        assert result == {:error, error}
+        assert calls() == 1
+        assert elapsed < 1_000_000
+      end
+    end
+
+    test "a 429 is a rate limit with Cloudflare's Retry-After, for a job to snooze on" do
+      stub_sequence([{429, [{"retry-after", "90"}]}])
+      assert quietly(fn -> Client.fetch("k.png") end) == {:error, {:rate_limited, 90_000}}
+    end
+
+    test "a 429 without a usable Retry-After isn't retried" do
+      for headers <- [[], [{"retry-after", "Wed, 21 Oct 2015 07:28:00"}]] do
+        stub_sequence([{429, headers}, {200, []}])
+        # Without a usable Retry-After, the account-wide limit's five minutes.
+        assert quietly(fn -> Client.delete("k.png") end) == {:error, {:rate_limited, 300_000}}
+        assert calls() == 1
+      end
+    end
+
+    test "a server error is retried" do
+      stub_sequence([{502, []}, {200, []}])
+
+      ExUnit.CaptureLog.capture_log(fn -> assert Client.delete("k.png") == :ok end)
+      assert calls() == 2
+    end
+  end
+
+  describe "fetch budget" do
+    test "an exhausted budget refuses without calling Cloudflare" do
+      settings(fetch_budget: 0)
+      Req.Test.stub(Client, fn _conn -> flunk("Cloudflare was called") end)
+
+      assert {:error, {:rate_limited, ms}} = quietly(fn -> Client.fetch("k.png") end)
+      assert ms in 1..60_000
+    end
+
+    test "is spent a fifth per minute" do
+      settings(fetch_budget: 10)
+      # A window no other test touches.
+      minute = 60 * System.unique_integer([:positive])
+
+      assert FetchBudget.take(minute) == :ok
+      assert FetchBudget.take(minute + 30) == :ok
+      # Refused until the next minute, one second away.
+      assert quietly(fn -> FetchBudget.take(minute + 59) end) == {:error, {:rate_limited, 1_000}}
+      assert FetchBudget.take(minute + 60) == :ok
+    end
+
+    test "reads a bad setting as the default" do
+      for budget <- ["many", "-1", -1, ""] do
+        settings(fetch_budget: budget)
+        assert KilnCloudflareImages.Config.fetch_budget() == 300
+      end
+
+      settings(fetch_budget: "12")
+      assert KilnCloudflareImages.Config.fetch_budget() == 12
+    end
+  end
+
+  defp settings(extra) do
+    current = Application.get_env(:kiln_cms, KilnCloudflareImages)
+    Application.put_env(:kiln_cms, KilnCloudflareImages, Keyword.merge(current, extra))
+  end
+
+  # Answers each request with the next {status, headers}, counting calls.
+  defp stub_sequence(responses) do
+    {:ok, agent} = Agent.start_link(fn -> {responses, 0} end)
+    Process.put(:calls, agent)
+
+    Req.Test.stub(Client, fn conn ->
+      {status, headers} =
+        Agent.get_and_update(agent, fn {[next | rest], n} -> {next, {rest, n + 1}} end)
+
+      conn
+      |> Plug.Conn.merge_resp_headers(headers)
+      |> Plug.Conn.put_status(status)
+      |> Req.Test.json(%{"success" => status == 200})
+    end)
+  end
+
+  defp calls, do: Agent.get(Process.get(:calls), &elem(&1, 1))
+
+  defp quietly(fun) do
+    {result, _log} = ExUnit.CaptureLog.with_log(fun)
+    result
   end
 end
