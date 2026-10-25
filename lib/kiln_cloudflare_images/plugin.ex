@@ -13,7 +13,7 @@ defmodule KilnCloudflareImages.Plugin do
   def name, do: "cloudflare_images"
 
   @impl true
-  def version, do: "0.1.0"
+  def version, do: "0.2.0"
 
   @impl true
   def summary, do: "Stores new image uploads in Cloudflare Images and serves their sizes from it."

@@ -53,7 +53,7 @@ never by editing Kiln's own `mix.exs`:
 # config/project_deps.exs
 [
   {:kiln_cloudflare_images,
-   github: "The-Verscienta/kiln_cloudflare_images", tag: "v0.1.0"}
+   github: "The-Verscienta/kiln_cloudflare_images", tag: "v0.2.0"}
 ]
 ```
 
