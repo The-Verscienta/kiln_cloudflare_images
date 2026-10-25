@@ -2,7 +2,7 @@ defmodule KilnCloudflareImages.MixProject do
   use Mix.Project
 
   # Keep in step with `KilnCloudflareImages.Plugin.version/0`.
-  @version "0.1.0"
+  @version "0.2.0"
   @source_url "https://github.com/The-Verscienta/kiln_cloudflare_images"
 
   def project do
